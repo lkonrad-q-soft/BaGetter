@@ -13,9 +13,14 @@ public class MirrorOptions : IValidatableObject
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// The v3 index that will be mirrored.
+    /// The v2 index that will be mirrored.
     /// </summary>
-    public Uri PackageSource { get; set; }
+    public Uri V2PackageSource { get; set; }
+
+    /// <summary>
+    /// The v3 indexes that are mirrored.
+    /// </summary>
+    public Uri[] V3PackageSources { get; set; }
 
     /// <summary>
     /// Whether or not the package source is a v2 package source feed.
@@ -30,11 +35,18 @@ public class MirrorOptions : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (Enabled && PackageSource == null)
+        if (Enabled && V2PackageSource == null)
         {
             yield return new ValidationResult(
-                $"The {nameof(PackageSource)} configuration is required if mirroring is enabled",
-                new[] { nameof(PackageSource) });
+                $"The {nameof(V2PackageSource)} configuration is required if mirroring is enabled",
+                new[] { nameof(V2PackageSource) });
+        }
+
+        if (Enabled && !Legacy && (V3PackageSources == null || V3PackageSources == Array.Empty<Uri>()))
+        {
+            yield return new ValidationResult(
+                $"The {nameof(V3PackageSources)} configuration is required if mirroring is enabled",
+                new[] { nameof(V3PackageSources) });
         }
     }
 }

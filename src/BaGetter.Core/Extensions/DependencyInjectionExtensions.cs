@@ -195,7 +195,7 @@ public static partial class DependencyInjectionExtensions
 
         return new NuGetClientFactory(
             httpClient,
-            options.Value.PackageSource.ToString());
+            options.Value.V2PackageSource.ToString());
     }
 
     private static IUpstreamClient UpstreamClientFactory(IServiceProvider provider)

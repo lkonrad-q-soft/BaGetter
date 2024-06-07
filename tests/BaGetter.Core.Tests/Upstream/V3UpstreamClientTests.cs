@@ -3,11 +3,17 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+
 using BaGetter.Protocol;
 using BaGetter.Protocol.Models;
+
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
 using Moq;
+
 using NuGet.Versioning;
+
 using Xunit;
 
 namespace BaGetter.Core.Tests.Upstream;
@@ -18,20 +24,20 @@ public class V3UpstreamClientTests
     public void Ctor_NuGetClientIsNull_ShouldThrow()
     {
         // Arrange
-        var logger = new Mock<ILogger<V3UpstreamClient>>();
+        var options = new Mock<IOptionsSnapshot<MirrorOptions>>();
 
         // Act/Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new V3UpstreamClient(null, logger.Object));
+        var ex = Assert.Throws<ArgumentNullException>(() => new V3UpstreamClient(null, options.Object));
     }
 
     [Fact]
     public void Ctor_LoggerIsNull_ShouldThrow()
     {
         // Arrange
-        var nugetClient = new Mock<NuGetClient>();
+        var logger = new Mock<ILogger<V3UpstreamClient>>();
 
         // Act/Assert
-        var ex = Assert.Throws<ArgumentNullException>(() => new V3UpstreamClient(nugetClient.Object, null));
+        var ex = Assert.Throws<ArgumentNullException>(() => new V3UpstreamClient(logger.Object, null));
     }
 
     public class ListPackageVersionsAsync : FactsBase
@@ -225,6 +231,10 @@ public class V3UpstreamClientTests
         public async Task ReturnsPackage()
         {
             _client
+                .Setup(c => c.ExistsAsync(_id, _version, _cancellation))
+                .ReturnsAsync(true);
+
+            _client
                 .Setup(c => c.DownloadPackageAsync(_id, _version, _cancellation))
                 .ReturnsAsync(new MemoryStream());
 
@@ -246,10 +256,14 @@ public class V3UpstreamClientTests
 
         protected FactsBase()
         {
+            var samplePackageSources = new Uri[] { new("http://127.0.0.1") };
+
             _client = new Mock<NuGetClient>();
             _target = new V3UpstreamClient(
-                _client.Object,
-                Mock.Of<ILogger<V3UpstreamClient>>());
+                Mock.Of<ILogger<V3UpstreamClient>>(),
+                Mock.Of<IOptionsSnapshot<MirrorOptions>>(x => x.Value.V3PackageSources == samplePackageSources),
+                _client.Object
+            );
         }
     }
 }

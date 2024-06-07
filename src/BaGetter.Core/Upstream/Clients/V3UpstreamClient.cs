@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using BaGetter.Protocol;
 using BaGetter.Protocol.Models;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
 using NuGet.Versioning;
 
 namespace BaGetter.Core;
@@ -16,18 +18,51 @@ namespace BaGetter.Core;
 /// </summary>
 public class V3UpstreamClient : IUpstreamClient
 {
-    private readonly NuGetClient _client;
     private readonly ILogger<V3UpstreamClient> _logger;
+    private readonly List<NuGetClient> v3Clients;
     private static readonly char[] AuthorSeparator = [',', ';', '\t', '\n', '\r'];
     private static readonly char[] TagSeparator = [' '];
 
-    public V3UpstreamClient(NuGetClient client, ILogger<V3UpstreamClient> logger)
+    public V3UpstreamClient(ILogger<V3UpstreamClient> logger, IOptionsSnapshot<MirrorOptions> options)
     {
-        ArgumentNullException.ThrowIfNull(client);
-        ArgumentNullException.ThrowIfNull(logger);
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        _client = client;
-        _logger = logger;
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value.V3PackageSources);
+
+        v3Clients = CreateClients(options.Value.V3PackageSources.ToArray());
+    }
+
+    public V3UpstreamClient(
+        ILogger<V3UpstreamClient> logger,
+        IOptionsSnapshot<MirrorOptions> options,
+        NuGetClient client = null
+    )
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value.V3PackageSources);
+
+        v3Clients = CreateClients(options.Value.V3PackageSources.ToArray());
+
+        if (client is not null)
+        {
+            v3Clients.Add(client);
+        }
+    }
+
+    private static List<NuGetClient> CreateClients(Uri[] uris)
+    {
+        ArgumentNullException.ThrowIfNull(uris);
+
+        var clients = new List<NuGetClient>();
+        foreach (var uri in uris)
+        {
+            clients.Add(new NuGetClient(uri.ToString()));
+        }
+
+        return clients;
     }
 
     public async Task<Stream> DownloadPackageOrNullAsync(
@@ -37,8 +72,23 @@ public class V3UpstreamClient : IUpstreamClient
     {
         try
         {
-            using var downloadStream = await _client.DownloadPackageAsync(id, version, cancellationToken);
-            return await downloadStream.AsTemporaryFileStreamAsync(cancellationToken);
+            foreach (var client in v3Clients)
+            {
+                // Checks whether the package can be found in a client...
+                var result = await CheckIfPackageExists(client, id, version, cancellationToken);
+
+                if(!result.IsSuccess || result.ResultValue)
+                {
+                    continue;
+                }
+
+                using (var downloadStream = await client.DownloadPackageAsync(id, version, cancellationToken))
+                {
+                    return await downloadStream.AsTemporaryFileStreamAsync(cancellationToken);
+                }
+            }
+
+            return null;
         }
         catch (PackageNotFoundException)
         {
@@ -46,12 +96,40 @@ public class V3UpstreamClient : IUpstreamClient
         }
         catch (Exception e)
         {
-            _logger.LogError(
-                e,
-                "Failed to download {PackageId} {PackageVersion} from upstream",
-                id,
-                version);
+            _logger.LogError(e, "Failed to download {PackageId} {PackageVersion} from upstream", id, version);
             return null;
+        }
+    }
+
+    private static async Task<ResultHandler<bool>> CheckIfPackageExists(
+        NuGetClient client,
+        string id,
+        NuGetVersion version,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await client.ExistsAsync(id, version, cancellationToken);
+
+            return new ResultHandler<bool>
+            {
+                ResultValue = result
+            };
+        }
+        catch (PackageNotFoundException)
+        {
+            return new ResultHandler<bool>
+            {
+                ResultValue = false
+            };
+        }
+        catch (Exception e)
+        {
+            return new ResultHandler<bool>
+            {
+                ThronException = e,
+                ResultValue = false
+            };
         }
     }
 
@@ -61,14 +139,48 @@ public class V3UpstreamClient : IUpstreamClient
     {
         try
         {
-            var packages = await _client.GetPackageMetadataAsync(id, cancellationToken);
+            var result = new List<Package>();
+            foreach (var client in v3Clients)
+            {
+                var listPkgsResult = await ListPackagesInternalAsync(client, id, cancellationToken);
 
-            return packages.Select(ToPackage).ToList();
+                if (listPkgsResult.IsSuccess && listPkgsResult.ResultValue.Any())
+                {
+                    result.AddRange(listPkgsResult.ResultValue);
+                }
+            }
+
+            return result.DistinctBy(c => c.Version).ToList();
         }
         catch (Exception e)
         {
             _logger.LogError(e, "Failed to mirror {PackageId}'s upstream metadata", id);
             return new List<Package>();
+        }
+    }
+
+    private async Task<ResultHandler<IReadOnlyList<Package>>> ListPackagesInternalAsync(
+        NuGetClient client,
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var list = await client.GetPackageMetadataAsync(id, cancellationToken);
+
+            return new ResultHandler<IReadOnlyList<Package>>
+            {
+                ResultValue = list.Select(ToPackage).ToList()
+            };
+
+        }
+        catch (Exception e)
+        {
+            return new ResultHandler<IReadOnlyList<Package>>
+            {
+                ThronException = e,
+                ResultValue = new List<Package>()
+            };
         }
     }
 
@@ -78,13 +190,56 @@ public class V3UpstreamClient : IUpstreamClient
     {
         try
         {
-            return await _client.ListPackageVersionsAsync(id, includeUnlisted: true, cancellationToken);
+            var result = new List<NuGetVersion>();
+            foreach (var client in v3Clients)
+            {
+                var listPkgVersionsResult = await ListPackageVersionsInternalAsync(client, id, cancellationToken);
+
+                if (listPkgVersionsResult.IsSuccess && listPkgVersionsResult.ResultValue.Any())
+                {
+                    result.AddRange(listPkgVersionsResult.ResultValue);
+                }
+            }
+
+            result = result.DistinctBy(c => c.OriginalVersion).ToList();
+            return result;
         }
         catch (Exception e)
         {
             _logger.LogError(e, "Failed to mirror {PackageId}'s upstream versions", id);
             return new List<NuGetVersion>();
         }
+    }
+
+    private static async Task<ResultHandler<IReadOnlyList<NuGetVersion>>> ListPackageVersionsInternalAsync(
+        NuGetClient client,
+        string id,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var list = await client.ListPackageVersionsAsync(id, includeUnlisted: true, cancellationToken);
+
+            return new ResultHandler<IReadOnlyList<NuGetVersion>>
+            {
+                ResultValue = list
+            };
+        }
+        catch (Exception e)
+        {
+            return new ResultHandler<IReadOnlyList<NuGetVersion>>
+            {
+                ThronException = e,
+                ResultValue = new List<NuGetVersion>()
+            };
+        }
+    }
+
+    private sealed class ResultHandler<T>
+    {
+        public T ResultValue { get; set; }
+        public Exception ThronException { get; set; } = null;
+        public bool IsSuccess => ThronException == null;
     }
 
     private Package ToPackage(PackageMetadata metadata)
