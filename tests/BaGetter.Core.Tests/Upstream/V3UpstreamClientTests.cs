@@ -254,9 +254,11 @@ public class V3UpstreamClientTests
         protected readonly NuGetVersion _version = new NuGetVersion("1.2.3-prerelease+semver2");
         protected readonly CancellationToken _cancellation = CancellationToken.None;
 
+        protected const string _localhost = "http://127.0.0.1";
+
         protected FactsBase()
         {
-            var samplePackageSources = new Uri[] { new("http://127.0.0.1") };
+            var samplePackageSources = new Uri[] { new(_localhost) };
 
             _client = new Mock<NuGetClient>();
             _target = new V3UpstreamClient(

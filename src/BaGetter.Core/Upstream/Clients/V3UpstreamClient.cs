@@ -77,7 +77,7 @@ public class V3UpstreamClient : IUpstreamClient
                 // Checks whether the package can be found in a client...
                 var result = await CheckIfPackageExists(client, id, version, cancellationToken);
 
-                if(!result.IsSuccess || !result.ResultValue)
+                if (!result.IsSuccess || !result.ResultValue)
                 {
                     continue;
                 }
