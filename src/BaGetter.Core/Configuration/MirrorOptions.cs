@@ -28,13 +28,70 @@ public class MirrorOptions : IValidatableObject
     [Range(0, int.MaxValue)]
     public int PackageDownloadTimeoutSeconds { get; set; } = 600;
 
+    /// <summary>
+    /// The sources that will be mirrored.
+    /// </summary>
+    public HashSet<MirrorSource> Sources { get; set; } = new();
+
+    /// <summary>
+    /// Whether or not the mirror has multiple sources.
+    /// </summary>
+    public bool HasMultipleSources => Sources is not null && Sources.Count > 0;
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
-        if (Enabled && PackageSource == null)
+        if (!Enabled)
         {
-            yield return new ValidationResult(
-                $"The {nameof(PackageSource)} configuration is required if mirroring is enabled",
-                new[] { nameof(PackageSource) });
+            yield break;
         }
+
+        if (!HasMultipleSources)
+        {
+            // roll back to old config
+            if (PackageSource is null)
+            {
+                yield return new ValidationResult(
+                    $"The {nameof(PackageSource)} configuration is required if mirroring is enabled",
+                    new[] { nameof(PackageSource) });
+            }
+        }
+        else
+        {
+            // validate each source in the new list
+            foreach (var source in Sources)
+            {
+                if (source.PackageSource is null)
+                {
+                    yield return new ValidationResult(
+                        "Each source must have a valid URL defined",
+                        new[] { nameof(source.PackageSource) });
+                }
+            }
+        }
+    }
+}
+
+public class MirrorSource
+{
+    public Uri PackageSource { get; set; }
+    public bool Legacy { get; set; }
+
+    public override bool Equals(object obj)
+    {
+        // Check for null and compare run-time types.
+        if (obj == null || !this.GetType().Equals(obj.GetType()))
+        {
+            return false;
+        }
+        else
+        {
+            MirrorSource ms = (MirrorSource)obj;
+            return (PackageSource.Equals(ms.PackageSource)) && (Legacy == ms.Legacy);
+        }
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(PackageSource, Legacy);
     }
 }
