@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.ChangeTracking.Internal;
 using Microsoft.Extensions.Options;
 using NuGet.Versioning;
 using System;
@@ -13,13 +14,13 @@ internal class MultiFeedUpstreamClient : IUpstreamClient
 {
     private readonly List<IUpstreamClient> _clients;
 
-    public MultiFeedUpstreamClient(IOptionsSnapshot<MirrorOptions> options, List<IUpstreamClient> clients)
+    public MultiFeedUpstreamClient(List<IUpstreamClient> clients)
     {
         ArgumentNullException.ThrowIfNull(clients);
 
-        if (!options.Value.HasMultipleSources && clients.Count == 0)
+        if (clients is null || clients.Count == 0)
         {
-            throw new ArgumentException("At least one upstream client must be provided.");
+            throw new ArgumentException("No mirror package source provided");
         }
 
         _clients = clients;

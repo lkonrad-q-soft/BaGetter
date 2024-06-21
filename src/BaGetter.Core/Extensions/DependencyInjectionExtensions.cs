@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
@@ -107,8 +108,6 @@ public static partial class DependencyInjectionExtensions
         services.TryAddTransient<DatabaseSearchService>();
         services.TryAddTransient<FileStorageService>();
         services.TryAddTransient<PackageService>();
-        services.TryAddTransient<V2UpstreamClient>();
-        services.TryAddTransient<V3UpstreamClient>();
         services.TryAddTransient<MultiFeedUpstreamClient>();
         services.TryAddTransient<DisabledUpstreamClient>();
         services.TryAddSingleton<NullStorageService>();
@@ -196,7 +195,7 @@ public static partial class DependencyInjectionExtensions
     {
         var options = provider.GetRequiredService<IOptions<MirrorOptions>>().Value;
         var httpClient = provider.GetRequiredService<HttpClient>();
-
+        
         var clients = new List<IUpstreamClient>();
 
         foreach (var source in options.Sources)
@@ -240,13 +239,6 @@ public static partial class DependencyInjectionExtensions
         if (!options.Value.Enabled)
             return provider.GetRequiredService<DisabledUpstreamClient>();
 
-        if (options.Value.HasMultipleSources)
-        {
-            return provider.GetRequiredService<MultiFeedUpstreamClient>();
-        }
-        else
-        {
-            return options.Value.Legacy ? provider.GetRequiredService<V2UpstreamClient>() : provider.GetRequiredService<V3UpstreamClient>();
-        }
+        return provider.GetRequiredService<MultiFeedUpstreamClient>();
     }
 }
