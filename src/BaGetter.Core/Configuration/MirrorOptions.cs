@@ -32,7 +32,8 @@ public class MirrorOptions : IValidatableObject
     /// <summary>
     /// Whether or not the package source is a v2 package source feed.
     /// </summary>
-    public bool Legacy {
+    public bool Legacy
+    {
         get => _legacy;
         set
         {
