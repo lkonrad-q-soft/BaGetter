@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
@@ -205,7 +204,11 @@ public static partial class DependencyInjectionExtensions
             if (source.Legacy)
             {
                 var logger = provider.GetRequiredService<ILogger<V2UpstreamClient>>();
-                var optionSnapshot = (IOptionsSnapshot<MirrorOptions>)provider.GetRequiredService<IOptions<MirrorOptions>>();
+
+                using var scope = provider.CreateScope();
+                var scopedProvider = scope.ServiceProvider;
+
+                var optionSnapshot = scopedProvider.GetRequiredService<IOptionsSnapshot<MirrorOptions>>();
                 client = new V2UpstreamClient(optionSnapshot, logger);
             }
             else
