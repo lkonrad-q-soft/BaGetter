@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
@@ -7,6 +8,7 @@ using BaGetter.Protocol;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace BaGetter.Core;
@@ -86,6 +88,7 @@ public static partial class DependencyInjectionExtensions
 
         services.TryAddSingleton(HttpClientFactory);
         services.TryAddSingleton(NuGetClientFactoryFactory);
+        services.TryAddSingleton(CreateUpstreamClients);
 
         services.TryAddScoped<DownloadsImporter>();
 
@@ -104,8 +107,7 @@ public static partial class DependencyInjectionExtensions
         services.TryAddTransient<DatabaseSearchService>();
         services.TryAddTransient<FileStorageService>();
         services.TryAddTransient<PackageService>();
-        services.TryAddTransient<V2UpstreamClient>();
-        services.TryAddTransient<V3UpstreamClient>();
+        services.TryAddTransient<MultiFeedUpstreamClient>();
         services.TryAddTransient<DisabledUpstreamClient>();
         services.TryAddSingleton<NullStorageService>();
         services.TryAddTransient<PackageDatabase>();
@@ -188,6 +190,40 @@ public static partial class DependencyInjectionExtensions
         return client;
     }
 
+    private static List<IUpstreamClient> CreateUpstreamClients(IServiceProvider provider)
+    {
+        var options = provider.GetRequiredService<IOptions<MirrorOptions>>().Value;
+        var httpClient = provider.GetRequiredService<HttpClient>();
+        
+        var clients = new List<IUpstreamClient>();
+
+        foreach (var source in options.Sources)
+        {
+            IUpstreamClient client;
+
+            if (source.Legacy)
+            {
+                using var scope = provider.CreateScope();
+                var scopedProvider = scope.ServiceProvider;
+
+                var logger = scopedProvider.GetRequiredService<ILogger<V2UpstreamClient>>();
+                var optionSnapshot = scopedProvider.GetRequiredService<IOptionsSnapshot<MirrorOptions>>();
+                client = new V2UpstreamClient(optionSnapshot, logger);
+            }
+            else
+            {
+                var logger = provider.GetRequiredService<ILogger<V3UpstreamClient>>();
+                var nugetClientFactory = new NuGetClientFactory(httpClient, source.PackageSource.ToString());
+
+                client = new V3UpstreamClient(new NuGetClient(nugetClientFactory), logger);
+            }
+
+            clients.Add(client);
+        }
+
+        return clients;
+    }
+
     private static NuGetClientFactory NuGetClientFactoryFactory(IServiceProvider provider)
     {
         var httpClient = provider.GetRequiredService<HttpClient>();
@@ -202,11 +238,9 @@ public static partial class DependencyInjectionExtensions
     {
         var options = provider.GetRequiredService<IOptionsSnapshot<MirrorOptions>>();
 
-        return options.Value.Enabled switch
-        {
-            false => provider.GetRequiredService<DisabledUpstreamClient>(),
-            true when options.Value.Legacy => provider.GetRequiredService<V2UpstreamClient>(),
-            _ => provider.GetRequiredService<V3UpstreamClient>()
-        };
+        if (!options.Value.Enabled)
+            return provider.GetRequiredService<DisabledUpstreamClient>();
+
+        return provider.GetRequiredService<MultiFeedUpstreamClient>();
     }
 }
