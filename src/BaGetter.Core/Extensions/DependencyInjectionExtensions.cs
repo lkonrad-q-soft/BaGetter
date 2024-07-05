@@ -203,11 +203,10 @@ public static partial class DependencyInjectionExtensions
 
             if (source.Legacy)
             {
-                var logger = provider.GetRequiredService<ILogger<V2UpstreamClient>>();
-
                 using var scope = provider.CreateScope();
                 var scopedProvider = scope.ServiceProvider;
 
+                var logger = scopedProvider.GetRequiredService<ILogger<V2UpstreamClient>>();
                 var optionSnapshot = scopedProvider.GetRequiredService<IOptionsSnapshot<MirrorOptions>>();
                 client = new V2UpstreamClient(optionSnapshot, logger);
             }
