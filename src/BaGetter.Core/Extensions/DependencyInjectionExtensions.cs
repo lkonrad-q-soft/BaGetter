@@ -192,36 +192,39 @@ public static partial class DependencyInjectionExtensions
 
     private static List<IUpstreamClient> CreateUpstreamClients(IServiceProvider provider)
     {
-        var options = provider.GetRequiredService<IOptions<MirrorOptions>>().Value;
+        var mirrorOptions = provider.GetRequiredService<IOptions<MirrorOptions>>().Value;
         var httpClient = provider.GetRequiredService<HttpClient>();
-        
+
         var clients = new List<IUpstreamClient>();
 
-        foreach (var source in options.Sources)
+        foreach (var source in mirrorOptions.Sources)
         {
-            IUpstreamClient client;
+            using var scope = provider.CreateScope();
+            var scopedProvider = scope.ServiceProvider;
 
-            if (source.Legacy)
-            {
-                using var scope = provider.CreateScope();
-                var scopedProvider = scope.ServiceProvider;
-
-                var logger = scopedProvider.GetRequiredService<ILogger<V2UpstreamClient>>();
-                var optionSnapshot = scopedProvider.GetRequiredService<IOptionsSnapshot<MirrorOptions>>();
-                client = new V2UpstreamClient(optionSnapshot, logger);
-            }
-            else
-            {
-                var logger = provider.GetRequiredService<ILogger<V3UpstreamClient>>();
-                var nugetClientFactory = new NuGetClientFactory(httpClient, source.PackageSource.ToString());
-
-                client = new V3UpstreamClient(new NuGetClient(nugetClientFactory), logger);
-            }
-
+            IUpstreamClient client = source.Legacy
+                ? CreateV2Client(scopedProvider, source)
+                : CreateV3Client(scopedProvider, httpClient, source);
             clients.Add(client);
         }
 
         return clients;
+    }
+
+    private static V2UpstreamClient CreateV2Client(IServiceProvider scopedProvider, MirrorSource mirrorSource)
+    {
+        var logger = scopedProvider.GetRequiredService<ILogger<V2UpstreamClient>>();
+        var mirrorOptions = new MirrorOptions() { PackageSource = mirrorSource.PackageSource, Legacy = true };
+
+        return new V2UpstreamClient(mirrorOptions, logger);
+    }
+
+    private static V3UpstreamClient CreateV3Client(IServiceProvider scopedProvider, HttpClient httpClient, MirrorSource source)
+    {
+        var logger = scopedProvider.GetRequiredService<ILogger<V3UpstreamClient>>();
+        var nugetClientFactory = new NuGetClientFactory(httpClient, source.PackageSource.ToString());
+
+        return new V3UpstreamClient(new NuGetClient(nugetClientFactory), logger);
     }
 
     private static NuGetClientFactory NuGetClientFactoryFactory(IServiceProvider provider)
