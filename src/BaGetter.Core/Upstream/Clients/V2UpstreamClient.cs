@@ -31,12 +31,12 @@ public class V2UpstreamClient : IUpstreamClient, IDisposable
     private static readonly char[] AuthorsSeparators = new[] { ',', ';', '\t', '\n', '\r' };
 
     public V2UpstreamClient(
-        IOptionsSnapshot<MirrorOptions> options,
+        MirrorOptions options,
         ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        if (options.Value?.PackageSource?.AbsolutePath == null)
+        if (options.PackageSource?.AbsolutePath == null)
         {
             throw new ArgumentException("No mirror package source has been set.");
         }
@@ -45,7 +45,7 @@ public class V2UpstreamClient : IUpstreamClient, IDisposable
 
         _ngLogger = NullLogger.Instance;
         _cache = new SourceCacheContext();
-        _repository = Repository.Factory.GetCoreV2(new PackageSource(options.Value.PackageSource.AbsoluteUri));
+        _repository = Repository.Factory.GetCoreV2(new PackageSource(options.PackageSource.AbsoluteUri));
     }
 
     public async Task<IReadOnlyList<NuGetVersion>> ListPackageVersionsAsync(string id, CancellationToken cancellationToken)
