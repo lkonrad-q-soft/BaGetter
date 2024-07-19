@@ -214,8 +214,8 @@ public static partial class DependencyInjectionExtensions
     private static V2UpstreamClient CreateV2Client(IServiceProvider scopedProvider, MirrorSource mirrorSource)
     {
         var logger = scopedProvider.GetRequiredService<ILogger<V2UpstreamClient>>();
-        var mirrorOptions = new MirrorOptions() { PackageSource = mirrorSource.PackageSource, Legacy = true };
-
+        var mirrorOptions = new MirrorSource() { PackageSource = mirrorSource.PackageSource, Legacy = true };
+      
         return new V2UpstreamClient(mirrorOptions, logger);
     }
 
