@@ -31,7 +31,7 @@ public class V2UpstreamClient : IUpstreamClient, IDisposable
     private static readonly char[] AuthorsSeparators = new[] { ',', ';', '\t', '\n', '\r' };
 
     public V2UpstreamClient(
-        MirrorOptions options,
+        MirrorSource options,
         ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(options);
